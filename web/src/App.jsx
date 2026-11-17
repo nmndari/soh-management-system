@@ -9,6 +9,7 @@ import Residents from './pages/Residents'
 import Reports from './pages/Reports'
 import Announcements from './pages/Announcements'
 import Meetings from './pages/Meetings'
+import Voting from './pages/Voting'
 
 function ComingSoon() {
   return (
@@ -35,7 +36,7 @@ function App() {
           <Route path="/reports" element={<Reports />} />
           <Route path="/announcements" element={<Announcements />} />
           <Route path="/meetings" element={<Meetings />} />
-          <Route path="/voting" element={<ComingSoon />} />
+          <Route path="/voting" element={<Voting />} />
           <Route path="/complaints" element={<ComingSoon />} />
           <Route path="/settings" element={<ComingSoon />} />
         </Route>
