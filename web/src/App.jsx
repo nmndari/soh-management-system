@@ -6,6 +6,9 @@ import AdminLayout from './layouts/AdminLayout'
 import './App.css'
 import Expenses from './pages/Expenses'
 import Residents from './pages/Residents'
+import Reports from './pages/Reports'
+import Announcements from './pages/Announcements'
+import Meetings from './pages/Meetings'
 
 function ComingSoon() {
   return (
@@ -29,9 +32,9 @@ function App() {
 
           <Route path="/residents" element={<Residents />} />
           <Route path="/expenses" element={<Expenses />} />
-          <Route path="/reports" element={<ComingSoon />} />
-          <Route path="/announcements" element={<ComingSoon />} />
-          <Route path="/meetings" element={<ComingSoon />} />
+          <Route path="/reports" element={<Reports />} />
+          <Route path="/announcements" element={<Announcements />} />
+          <Route path="/meetings" element={<Meetings />} />
           <Route path="/voting" element={<ComingSoon />} />
           <Route path="/complaints" element={<ComingSoon />} />
           <Route path="/settings" element={<ComingSoon />} />
