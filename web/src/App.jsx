@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard'
 import AdminLayout from './layouts/AdminLayout'
 import './App.css'
 import Expenses from './pages/Expenses'
+import Residents from './pages/Residents'
 
 function ComingSoon() {
   return (
@@ -26,7 +27,7 @@ function App() {
         <Route element={<AdminLayout />}>
           <Route path="/dashboard" element={<Dashboard />} />
 
-          <Route path="/residents" element={<ComingSoon />} />
+          <Route path="/residents" element={<Residents />} />
           <Route path="/expenses" element={<Expenses />} />
           <Route path="/reports" element={<ComingSoon />} />
           <Route path="/announcements" element={<ComingSoon />} />
