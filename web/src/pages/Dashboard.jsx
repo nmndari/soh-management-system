@@ -11,88 +11,96 @@ import {
   MapPin,
   Plus,
 } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { getDashboard } from '../services/finance'
+import { announcementStatus } from '../services/labels'
+import { currentAdmin } from '../services/auth'
 
-const stats = [
-  {
-    title: 'Нийт оршин суугч',
-    value: '248',
-    note: 'Бүртгэлтэй оршин суугч',
-    icon: Users,
-    color: 'blue',
-  },
-  {
-    title: 'Энэ сарын орлого',
-    value: '12.8 сая ₮',
-    note: 'Бүртгэгдсэн орлого',
-    icon: Wallet,
-    color: 'green',
-  },
-  {
-    title: 'Энэ сарын зарлага',
-    value: '4.2 сая ₮',
-    note: 'Бүртгэгдсэн зарлага',
-    icon: Receipt,
-    color: 'orange',
-  },
-  {
-    title: 'Нээлттэй санал гомдол',
-    value: '08',
-    note: 'Шийдвэрлэлт хүлээж буй',
-    icon: Megaphone,
-    color: 'purple',
-  },
-]
+const MONTHS = ['ЯНВ', 'ФЕВ', 'МАР', 'АПР', 'МАЙ', 'ИЮН', 'ИЮЛ', 'АВГ', 'СЕП', 'ОКТ', 'НОЯ', 'ДЕК']
 
-const announcements = [
-  {
-    title: 'Орцны цэвэрлэгээний хуваарь',
-    date: '2026.11.17',
-    status: 'Нийтэлсэн',
-  },
-  {
-    title: 'Оршин суугчдын ээлжит хурал',
-    date: '2026.11.15',
-    status: 'Нийтэлсэн',
-  },
-  {
-    title: 'Усны шугамын засвар үйлчилгээ',
-    date: '2026.11.13',
-    status: 'Ноорог',
-  },
-]
+// 12800000 → '12.8 сая ₮'
+const formatMillions = (amount) => {
+  if (amount >= 1000000) {
+    return `${(amount / 1000000).toFixed(1).replace(/\.0$/, '')} сая ₮`
+  }
+  return `${new Intl.NumberFormat('mn-MN').format(amount)} ₮`
+}
 
-const meetings = [
-  {
-    title: 'Оршин суугчдын ээлжит хурал',
-    date: '20',
-    month: 'НОЯ',
-    time: '18:00',
-    location: 'Байрны хурлын танхим',
-  },
-  {
-    title: 'Удирдах зөвлөлийн хурал',
-    date: '25',
-    month: 'НОЯ',
-    time: '16:00',
-    location: 'СӨХ-ийн оффис',
-  },
-]
+const formatDate = (date) => date.split('-').join('.')
 
 function Dashboard() {
+  const navigate = useNavigate()
+  const [summary, setSummary] = useState(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    getDashboard()
+      .then(setSummary)
+      .catch((err) => setError(err.message))
+  }, [])
+
+  const stats = [
+    {
+      title: 'Нийт оршин суугч',
+      value: summary ? String(summary.residentsCount) : '—',
+      note: 'Бүртгэлтэй оршин суугч',
+      icon: Users,
+      color: 'blue',
+    },
+    {
+      title: 'Энэ сарын орлого',
+      value: summary ? formatMillions(summary.monthIncome) : '—',
+      note: 'Бүртгэгдсэн орлого',
+      icon: Wallet,
+      color: 'green',
+    },
+    {
+      title: 'Энэ сарын зарлага',
+      value: summary ? formatMillions(summary.monthExpense) : '—',
+      note: 'Бүртгэгдсэн зарлага',
+      icon: Receipt,
+      color: 'orange',
+    },
+    {
+      title: 'Нээлттэй санал гомдол',
+      value: summary ? String(summary.openComplaints).padStart(2, '0') : '—',
+      note: 'Шийдвэрлэлт хүлээж буй',
+      icon: Megaphone,
+      color: 'purple',
+    },
+  ]
+
+  const announcements = (summary?.recentAnnouncements || []).map((item) => ({
+    ...item,
+    date: formatDate(item.date),
+    status: announcementStatus.toLabel(item.status),
+  }))
+
+  const meetings = (summary?.upcomingMeetings || []).map((item) => {
+    const [, month, day] = item.date.split('-')
+    return { ...item, date: day, month: MONTHS[Number(month) - 1] }
+  })
+
+  const today = new Date()
+  const admin = currentAdmin()
+
   return (
     <div className="dashboard-page">
       <div className="dashboard-heading">
         <div>
-          <p className="welcome-label">ТАВТАЙ МОРИЛ, АДМИН</p>
+          <p className="welcome-label">
+            ТАВТАЙ МОРИЛ, {(admin?.fullName || 'АДМИН').toUpperCase()}
+          </p>
           <h1>Хянах самбар</h1>
           <p className="page-description">
-            СӨХ-ийн үйл ажиллагааны ерөнхий мэдээлэлтэй танилцана уу.
+            {error || 'СӨХ-ийн үйл ажиллагааны ерөнхий мэдээлэлтэй танилцана уу.'}
           </p>
         </div>
 
         <div className="today-date">
           <CalendarDays size={17} />
-          2026 оны 11-р сарын 17
+          {today.getFullYear()} оны {today.getMonth() + 1}-р сарын {today.getDate()}
         </div>
       </div>
 
@@ -122,14 +130,17 @@ function Dashboard() {
               <p>Оршин суугчдад хүргэсэн мэдээлэл</p>
             </div>
 
-            <button className="view-all">
+            <button className="view-all" onClick={() => navigate('/announcements')}>
               Бүгдийг харах <ArrowRight size={15} />
             </button>
           </div>
 
           <div className="announcement-list">
+            {announcements.length === 0 && summary && (
+              <p className="page-description">Зарлал алга байна.</p>
+            )}
             {announcements.map((item) => (
-              <div className="announcement-item" key={item.title}>
+              <div className="announcement-item" key={item.id}>
                 <div className="announcement-icon">
                   <Megaphone size={19} />
                 </div>
@@ -146,7 +157,7 @@ function Dashboard() {
             ))}
           </div>
 
-          <button className="quick-action">
+          <button className="quick-action" onClick={() => navigate('/announcements')}>
             <Plus size={17} />
             Шинэ зарлал үүсгэх
           </button>
@@ -163,8 +174,11 @@ function Dashboard() {
           </div>
 
           <div className="meeting-list">
+            {meetings.length === 0 && summary && (
+              <p className="page-description">Товлогдсон хурал алга байна.</p>
+            )}
             {meetings.map((meeting) => (
-              <div className="meeting-item" key={meeting.title}>
+              <div className="meeting-item" key={meeting.id}>
                 <div className="meeting-date">
                   <strong>{meeting.date}</strong>
                   <span>{meeting.month}</span>
@@ -179,7 +193,7 @@ function Dashboard() {
             ))}
           </div>
 
-          <button className="quick-action">
+          <button className="quick-action" onClick={() => navigate('/meetings')}>
             <Plus size={17} />
             Хурал төлөвлөх
           </button>
@@ -193,11 +207,13 @@ function Dashboard() {
           </div>
           <div>
             <h3>Оршин суугчдын бүртгэл</h3>
-            <p>Нийт 248 оршин суугч системд бүртгэлтэй байна.</p>
+            <p>
+              Нийт {summary?.residentsCount ?? '—'} оршин суугч системд бүртгэлтэй байна.
+            </p>
           </div>
         </div>
 
-        <button className="view-all">
+        <button className="view-all" onClick={() => navigate('/residents')}>
           Дэлгэрэнгүй <ArrowUpRight size={16} />
         </button>
       </section>

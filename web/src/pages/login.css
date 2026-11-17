@@ -261,3 +261,17 @@
     letter-spacing: 1px;
   }
 }
+.login-error {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid #f0c9c9;
+  border-radius: 8px;
+  background: #fdf1f1;
+  color: #b23c3c;
+  font-size: 13px;
+}
+
+.login-button:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}

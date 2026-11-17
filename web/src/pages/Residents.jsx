@@ -1,6 +1,7 @@
 
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
+  Wallet,
   Plus,
   Search,
   Users,
@@ -15,76 +16,18 @@ import {
   Mail,
 } from 'lucide-react'
 import './Residents.css'
+import { errorText } from '../services/api'
+import {
+  createResident,
+  deleteResident,
+  getResidentStats,
+  listResidents,
+  recordPayment,
+  updateResident,
+} from '../services/residents'
+import { useDebounced } from '../utils/date'
 
-const initialResidents = [
-  {
-    id: 1,
-    lastName: 'Бат',
-    firstName: 'Болд',
-    phone: '99112233',
-    email: 'bold@gmail.com',
-    entrance: '1',
-    floor: '3',
-    apartment: '12',
-    status: 'Төлсөн',
-  },
-  {
-    id: 2,
-    lastName: 'Дорж',
-    firstName: 'Номин',
-    phone: '88112233',
-    email: 'nomin@gmail.com',
-    entrance: '1',
-    floor: '5',
-    apartment: '21',
-    status: 'Төлсөн',
-  },
-  {
-    id: 3,
-    lastName: 'Ган',
-    firstName: 'Анхбаяр',
-    phone: '99114455',
-    email: 'ankhbayar@gmail.com',
-    entrance: '2',
-    floor: '4',
-    apartment: '35',
-    status: 'Төлсөн',
-  },
-  {
-    id: 4,
-    lastName: 'Цэрэн',
-    firstName: 'Саруул',
-    phone: '88115566',
-    email: 'saruul@gmail.com',
-    entrance: '2',
-    floor: '7',
-    apartment: '48',
-    status: 'Төлөөгүй',
-  },
-  {
-    id: 5,
-    lastName: 'Мөнх',
-    firstName: 'Тэмүүлэн',
-    phone: '99001122',
-    email: 'temuulen@gmail.com',
-    entrance: '1',
-    floor: '2',
-    apartment: '8',
-    status: 'Төлсөн',
-  },
-  {
-    id: 6,
-    lastName: 'Баяр',
-    firstName: 'Энхжин',
-    phone: '99117788',
-    email: 'enkhjin@gmail.com',
-    entrance: '3',
-    floor: '6',
-    apartment: '65',
-    status: 'Төлсөн',
-  },
-]
-
+// Төлбөрийн төлвийг сар бүрийн нэхэмжлэлээс сервер тооцдог тул маягтад байхгүй
 const emptyForm = {
   lastName: '',
   firstName: '',
@@ -93,11 +36,13 @@ const emptyForm = {
   entrance: '1',
   floor: '',
   apartment: '',
-  status: 'Төлсөн',
 }
 
 function Residents() {
-  const [residents, setResidents] = useState(initialResidents)
+  const [residents, setResidents] = useState([])
+  const [stats, setStats] = useState({ total: 0, paid: 0, unpaid: 0 })
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
   const [entranceFilter, setEntranceFilter] = useState('Бүх орц')
   const [statusFilter, setStatusFilter] = useState('Бүх төлөв')
@@ -106,30 +51,37 @@ function Residents() {
   const [viewResident, setViewResident] = useState(null)
   const [form, setForm] = useState(emptyForm)
 
-  const activeCount = residents.filter(
-    (resident) => resident.status === 'Төлсөн'
-  ).length
+  const debouncedSearch = useDebounced(search)
 
-  const inactiveCount = residents.length - activeCount
+  // Шүүлтүүрийг сервер гүйцэтгэнэ
+  const loadResidents = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [list, summary] = await Promise.all([
+        listResidents({
+          search: debouncedSearch,
+          entrance: entranceFilter,
+          status: statusFilter,
+        }),
+        getResidentStats(),
+      ])
+      setResidents(list.items)
+      setStats(summary)
+    } catch (err) {
+      alert(errorText(err))
+    } finally {
+      setLoading(false)
+    }
+  }, [debouncedSearch, entranceFilter, statusFilter])
 
-  const filteredResidents = residents.filter((resident) => {
-    const fullName = `${resident.lastName} ${resident.firstName}`.toLowerCase()
+  useEffect(() => {
+    loadResidents()
+  }, [loadResidents])
 
-    const matchesSearch =
-      fullName.includes(search.toLowerCase()) ||
-      resident.phone.includes(search) ||
-      resident.apartment.includes(search)
+  const activeCount = stats.paid
+  const inactiveCount = stats.unpaid
 
-    const matchesEntrance =
-      entranceFilter === 'Бүх орц' ||
-      resident.entrance === entranceFilter
-
-    const matchesStatus =
-      statusFilter === 'Бүх төлөв' ||
-      resident.status === statusFilter
-
-    return matchesSearch && matchesEntrance && matchesStatus
-  })
+  const filteredResidents = residents
 
   const openAddModal = () => {
     setSelectedResident(null)
@@ -139,38 +91,63 @@ function Residents() {
 
   const openEditModal = (resident) => {
     setSelectedResident(resident)
-    setForm({ ...resident })
+    setForm({
+      lastName: resident.lastName,
+      firstName: resident.firstName,
+      phone: resident.phone,
+      email: resident.email,
+      entrance: resident.entrance,
+      floor: resident.floor,
+      apartment: resident.apartment,
+    })
     setShowModal(true)
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
+    setSaving(true)
 
-    if (selectedResident) {
-      setResidents((prev) =>
-        prev.map((resident) =>
-          resident.id === selectedResident.id
-            ? { ...form, id: selectedResident.id }
-            : resident
-        )
-      )
-    } else {
-      setResidents((prev) => [
-        { ...form, id: Date.now() },
-        ...prev,
-      ])
+    try {
+      if (selectedResident) {
+        await updateResident(selectedResident.id, form)
+      } else {
+        await createResident(form)
+      }
+
+      setShowModal(false)
+      setSelectedResident(null)
+      setForm(emptyForm)
+      await loadResidents()
+    } catch (err) {
+      alert(errorText(err))
+    } finally {
+      setSaving(false)
     }
-
-    setShowModal(false)
-    setSelectedResident(null)
-    setForm(emptyForm)
   }
 
-  const handleDelete = (id) => {
-    if (window.confirm('Энэ оршин суугчийн бүртгэлийг устгах уу?')) {
-      setResidents((prev) =>
-        prev.filter((resident) => resident.id !== id)
-      )
+  const handleDelete = async (id) => {
+    if (!window.confirm('Энэ оршин суугчийн бүртгэлийг устгах уу?')) return
+
+    try {
+      await deleteResident(id)
+      await loadResidents()
+    } catch (err) {
+      alert(errorText(err))
+    }
+  }
+
+  // Энэ сарын үлдэгдлийг бүтэн төлсөн гэж бүртгэнэ (орлогод автоматаар орно)
+  const handlePayment = async (resident) => {
+    const amount = new Intl.NumberFormat('mn-MN').format(resident.remaining)
+    if (!window.confirm(`${resident.lastName} ${resident.firstName}-ийн ${amount} ₮ төлбөрийг бүртгэх үү?`)) {
+      return
+    }
+
+    try {
+      await recordPayment(resident)
+      await loadResidents()
+    } catch (err) {
+      alert(errorText(err))
     }
   }
 
@@ -198,7 +175,7 @@ function Residents() {
           </div>
           <div>
             <p>Нийт оршин суугч</p>
-            <h2>{residents.length}</h2>
+            <h2>{stats.total}</h2>
           </div>
         </div>
 
@@ -232,7 +209,7 @@ function Residents() {
           </div>
 
           <span className="resident-count">
-            {filteredResidents.length} бүртгэл
+            {loading ? 'Ачаалж байна...' : `${filteredResidents.length} бүртгэл`}
           </span>
         </div>
 
@@ -324,6 +301,15 @@ function Residents() {
 
                     <td>
                       <div className="resident-actions">
+                        {resident.remaining > 0 && (
+                          <button
+                            title="Энэ сарын төлбөр бүртгэх"
+                            onClick={() => handlePayment(resident)}
+                          >
+                            <Wallet size={16} />
+                          </button>
+                        )}
+
                         <button
                           title="Дэлгэрэнгүй"
                           onClick={() => setViewResident(resident)}
@@ -467,17 +453,6 @@ function Residents() {
                 </div>
               </div>
 
-              <div className="resident-form-field">
-                <label>Төлөв</label>
-                <select
-                  value={form.status}
-                  onChange={(e) => setForm({ ...form, status: e.target.value })}
-                >
-                  <option>Төлсөн</option>
-                  <option>Төлөөгүй</option>
-                </select>
-              </div>
-
               <div className="resident-modal-actions">
                 <button
                   type="button"
@@ -487,9 +462,9 @@ function Residents() {
                   Болих
                 </button>
 
-                <button type="submit" className="resident-save-btn">
+                <button type="submit" className="resident-save-btn" disabled={saving}>
                   <Plus size={16} />
-                  {selectedResident ? 'Хадгалах' : 'Бүртгэх'}
+                  {saving ? 'Хадгалж байна...' : selectedResident ? 'Хадгалах' : 'Бүртгэх'}
                 </button>
               </div>
             </form>

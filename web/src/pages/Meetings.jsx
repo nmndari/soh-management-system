@@ -1,5 +1,5 @@
 
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Plus,
   Search,
@@ -21,83 +21,23 @@ import {
   ListChecks,
 } from 'lucide-react'
 import './Meetings.css'
-
-const initialMeetings = [
-  {
-    id: 1,
-    title: 'Ээлжит оршин суугчдын хурал',
-    type: 'Ээлжит',
-    date: '2026-11-25',
-    time: '18:00',
-    location: 'СӨХ-ийн байр',
-    format: 'Танхим',
-    audience: 'Бүх оршин суугч',
-    description: 'Оршин суугчдын ээлжит хурал зохион байгуулах.',
-    agenda: [
-      '2026 оны санхүүгийн тайлан танилцуулах',
-      'Орцны засвар үйлчилгээний асуудал',
-      'Ирэх улирлын төлөвлөгөө',
-    ],
-    status: 'Товлогдсон',
-    notify: true,
-  },
-  {
-    id: 2,
-    title: 'Санхүүгийн тайлан хэлэлцэх хурал',
-    type: 'Ээлжит бус',
-    date: '2026-11-10',
-    time: '17:00',
-    location: 'СӨХ-ийн байр',
-    format: 'Танхим',
-    audience: 'Бүх оршин суугч',
-    description: 'Санхүүгийн тайлангийн талаар хэлэлцэх.',
-    agenda: [
-      'Орлого, зарлагын тайлан',
-      'Зардлын хуваарилалт',
-    ],
-    status: 'Дууссан',
-    notify: false,
-  },
-  {
-    id: 3,
-    title: 'Орцны тохижилтын асуудал',
-    type: 'Ээлжит бус',
-    date: '2026-12-05',
-    time: '16:00',
-    location: '1-р орц',
-    format: 'Танхим',
-    audience: '1-р орц',
-    description: 'Орцны тохижилтын талаар санал солилцох.',
-    agenda: [
-      'Орцны тохижилтын санал',
-      'Засварын төсөв',
-    ],
-    status: 'Ноорог',
-    notify: false,
-  },
-  {
-    id: 4,
-    title: 'Өвлийн бэлтгэл ажлын хурал',
-    type: 'Ээлжит',
-    date: '2026-11-20',
-    time: '15:00',
-    location: 'Онлайн',
-    format: 'Онлайн',
-    audience: 'Бүх оршин суугч',
-    description: 'Өвлийн бэлтгэл ажлын явцын талаар мэдээлэл өгөх.',
-    agenda: [
-      'Халаалтын систем',
-      'Цэвэрлэгээ үйлчилгээ',
-    ],
-    status: 'Товлогдсон',
-    notify: true,
-  },
-]
+import { errorText } from '../services/api'
+import {
+  completeMeeting,
+  createMeeting,
+  deleteMeeting,
+  getMeetingStats,
+  listMeetings,
+  publishMeeting,
+  unpublishMeeting,
+  updateMeeting,
+} from '../services/content'
+import { todayString, useDebounced } from '../utils/date'
 
 const emptyForm = {
   title: '',
   type: 'Ээлжит',
-  date: new Date().toISOString().slice(0, 10),
+  date: todayString(),
   time: '18:00',
   location: '',
   format: 'Танхим',
@@ -117,12 +57,15 @@ const formatDate = (date) => {
 }
 
 function Meetings() {
-  const [meetings, setMeetings] = useState(initialMeetings)
+  const [meetings, setMeetings] = useState([])
+  const [stats, setStats] = useState({ total: 0, upcoming: 0, completed: 0, draft: 0 })
+  const [loading, setLoading] = useState(true)
 
   // Search and filters
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('Бүх төлөв')
   const [typeFilter, setTypeFilter] = useState('Бүх төрөл')
+  const debouncedSearch = useDebounced(search)
 
   // Modal states
   const [showModal, setShowModal] = useState(false)
@@ -132,44 +75,52 @@ function Meetings() {
   // Form state
   const [form, setForm] = useState(emptyForm)
 
+  // Жагсаалт ба статистикийг серверээс авна (шүүлтүүрийг сервер хийнэ)
+  const loadMeetings = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [list, summary] = await Promise.all([
+        listMeetings({ search: debouncedSearch, status: statusFilter, type: typeFilter }),
+        getMeetingStats(),
+      ])
+      setMeetings(list.items)
+      setStats(summary)
+    } catch (err) {
+      alert(errorText(err))
+    } finally {
+      setLoading(false)
+    }
+  }, [debouncedSearch, statusFilter, typeFilter])
+
+  useEffect(() => {
+    loadMeetings()
+  }, [loadMeetings])
+
+  // Үйлдэл хийгээд жагсаалтыг дахин ачаална
+  const run = async (action) => {
+    try {
+      await action()
+      await loadMeetings()
+      return true
+    } catch (err) {
+      alert(errorText(err))
+      return false
+    }
+  }
+
   // Statistics
-  const today = new Date().toISOString().slice(0, 10)
+  const upcomingCount = stats.upcoming
+  const completedCount = stats.completed
+  const draftCount = stats.draft
 
-  const upcomingCount = meetings.filter(
-    (item) => item.status === 'Товлогдсон' && item.date >= today
-  ).length
-
-  const completedCount = meetings.filter(
-    (item) => item.status === 'Дууссан'
-  ).length
-
-  const draftCount = meetings.filter(
-    (item) => item.status === 'Ноорог'
-  ).length
-
-  // Filter meetings
-  const filteredMeetings = meetings.filter((item) => {
-    const matchesSearch =
-      item.title.toLowerCase().includes(search.toLowerCase()) ||
-      item.location.toLowerCase().includes(search.toLowerCase())
-
-    const matchesStatus =
-      statusFilter === 'Бүх төлөв' ||
-      item.status === statusFilter
-
-    const matchesType =
-      typeFilter === 'Бүх төрөл' ||
-      item.type === typeFilter
-
-    return matchesSearch && matchesStatus && matchesType
-  })
+  const filteredMeetings = meetings
 
   // Open create modal
   const openCreateModal = () => {
     setSelectedMeeting(null)
     setForm({
       ...emptyForm,
-      date: new Date().toISOString().slice(0, 10),
+      date: todayString(),
       agenda: [''],
     })
     setShowModal(true)
@@ -219,86 +170,39 @@ function Meetings() {
   }
 
   // Create or update meeting
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
 
-    const action = e.nativeEvent.submitter?.value
-    const shouldPublish = action === 'publish'
+    const action = e.nativeEvent.submitter?.value === 'publish' ? 'publish' : 'draft'
 
-    const cleanAgenda = form.agenda
-      .map((item) => item.trim())
-      .filter(Boolean)
+    const saved = await run(() =>
+      selectedMeeting
+        ? updateMeeting(selectedMeeting.id, form, action)
+        : createMeeting(form, action)
+    )
 
-    const newMeeting = {
-      ...form,
-      title: form.title.trim(),
-      location: form.location.trim(),
-      description: form.description.trim(),
-      agenda: cleanAgenda,
-      status: shouldPublish ? 'Товлогдсон' : 'Ноорог',
-      id: selectedMeeting ? selectedMeeting.id : Date.now(),
-    }
-
-    if (selectedMeeting) {
-      setMeetings((prev) =>
-        prev.map((item) =>
-          item.id === selectedMeeting.id ? newMeeting : item
-        )
-      )
-    } else {
-      setMeetings((prev) => [newMeeting, ...prev])
-    }
-
-    closeModal()
+    if (saved) closeModal()
   }
 
   // Delete meeting
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     if (!window.confirm('Энэ хурлыг устгахдаа итгэлтэй байна уу?')) {
       return
     }
 
-    setMeetings((prev) =>
-      prev.filter((item) => item.id !== id)
-    )
-
-    if (viewMeeting?.id === id) {
+    if (await run(() => deleteMeeting(id)) && viewMeeting?.id === id) {
       setViewMeeting(null)
     }
   }
 
   // Publish draft
-  const handlePublish = (id) => {
-    setMeetings((prev) =>
-      prev.map((item) =>
-        item.id === id
-          ? { ...item, status: 'Товлогдсон' }
-          : item
-      )
-    )
-  }
+  const handlePublish = (id) => run(() => publishMeeting(id))
 
   // Mark meeting as completed
-  const handleComplete = (id) => {
-    setMeetings((prev) =>
-      prev.map((item) =>
-        item.id === id
-          ? { ...item, status: 'Дууссан' }
-          : item
-      )
-    )
-  }
+  const handleComplete = (id) => run(() => completeMeeting(id))
 
   // Convert published meeting to draft
-  const handleUnpublish = (id) => {
-    setMeetings((prev) =>
-      prev.map((item) =>
-        item.id === id
-          ? { ...item, status: 'Ноорог', notify: false }
-          : item
-      )
-    )
-  }
+  const handleUnpublish = (id) => run(() => unpublishMeeting(id))
 
   return (
     <div className="meetings-page">
@@ -335,7 +239,7 @@ function Meetings() {
           </div>
           <div>
             <p>Нийт хурал</p>
-            <h2>{meetings.length}</h2>
+            <h2>{stats.total}</h2>
           </div>
         </div>
 
@@ -381,7 +285,7 @@ function Meetings() {
           </div>
 
           <span className="meeting-count">
-            {filteredMeetings.length} хурал
+            {loading ? 'Ачаалж байна...' : `${filteredMeetings.length} хурал`}
           </span>
         </div>
 

@@ -1,0 +1,34 @@
+# Баримт бичиг (локал дээр л хадгална)
+docs/
+
+# Сангууд
+node_modules/
+
+# Build гаралт
+dist/
+build/
+
+# Орчны тохиргоо, нууц түлхүүр (.env.example-ийг үлдээнэ)
+.env
+.env.*
+!.env.example
+
+# Хэрэглэгчийн оруулсан файл (гомдлын зураг)
+backend/uploads/
+
+# Лог
+logs/
+*.log
+npm-debug.log*
+
+# Тест (Playwright, coverage)
+coverage/
+playwright-report/
+test-results/
+
+# Засварлагч, үйлдлийн систем
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db

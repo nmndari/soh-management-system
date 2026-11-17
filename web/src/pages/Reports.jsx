@@ -1,5 +1,5 @@
 
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Wallet,
   TrendingUp,
@@ -24,32 +24,19 @@ import {
   Cell,
 } from 'recharts'
 import './Reports.css'
+import { errorText } from '../services/api'
+import { getReport } from '../services/finance'
+import { currentPeriod, periodLabel, recentPeriods } from '../utils/date'
 
-// Түр ашиглах жишээ орлогын мэдээлэл
-const initialIncome = [
-  { id: 1, title: 'СӨХ-ийн сарын хураамж', category: 'Сарын хураамж', amount: 3500000, date: '2026-11-15', type: 'Орлого' },
-  { id: 2, title: 'Зогсоолын түрээс', category: 'Түрээс', amount: 450000, date: '2026-11-12', type: 'Орлого' },
-  { id: 3, title: 'Нэмэлт үйлчилгээний орлого', category: 'Бусад орлого', amount: 200000, date: '2026-11-08', type: 'Орлого' },
-]
+// Сонгох боломжтой үе: сүүлийн 12 сар + бүх хугацаа
+const periodOptions = recentPeriods(12)
 
-// Зардлын мэдээлэлтэй ижил жишээ өгөгдөл
-const initialExpenses = [
-  { id: 1, title: 'Лифтний засвар үйлчилгээ', category: 'Засвар үйлчилгээ', amount: 850000, date: '2026-11-15', type: 'Зарлага' },
-  { id: 2, title: 'Орцны цэвэрлэгээ', category: 'Цэвэрлэгээ', amount: 450000, date: '2026-11-12', type: 'Зарлага' },
-  { id: 3, title: 'Нийтийн эзэмшлийн цахилгаан', category: 'Ашиглалтын зардал', amount: 320000, date: '2026-11-10', type: 'Зарлага' },
-  { id: 4, title: 'Харуул хамгаалалтын үйлчилгээ', category: 'Үйлчилгээ', amount: 1200000, date: '2026-11-08', type: 'Зарлага' },
-  { id: 5, title: 'Гэрэлтүүлгийн чийдэн солих', category: 'Засвар үйлчилгээ', amount: 180000, date: '2026-11-05', type: 'Зарлага' },
-]
-
-// Сүүлийн 6 сарын графикийн жишээ мэдээлэл
-const monthlyData = [
-  { month: '6 сар', income: 8200000, expense: 5100000 },
-  { month: '7 сар', income: 9000000, expense: 6200000 },
-  { month: '8 сар', income: 8700000, expense: 5800000 },
-  { month: '9 сар', income: 10500000, expense: 7100000 },
-  { month: '10 сар', income: 11200000, expense: 7600000 },
-  { month: '11 сар', income: 12500000, expense: 8200000 },
-]
+const emptyReport = {
+  summary: { totalIncome: 0, totalExpense: 0, balance: 0, transactionCount: 0 },
+  monthly: [],
+  expenseCategories: [],
+  transactions: [],
+}
 
 const categoryColors = ['#6386b5', '#d99a61', '#8d76b5', '#6b9d91', '#a3adbd']
 
@@ -62,45 +49,26 @@ const formatDate = (date) => {
 }
 
 function Reports() {
-  const [period, setPeriod] = useState('2026-11')
+  const [period, setPeriod] = useState(currentPeriod())
+  const [report, setReport] = useState(emptyReport)
 
-  const allTransactions = useMemo(
-    () => [...initialIncome, ...initialExpenses].sort(
-      (a, b) => new Date(b.date) - new Date(a.date)
-    ),
-    []
-  )
-
-  const filteredTransactions = allTransactions.filter((item) => {
-    if (period === 'all') return true
-    return item.date.startsWith(period)
-  })
-
-  const totalIncome = filteredTransactions
-    .filter((item) => item.type === 'Орлого')
-    .reduce((total, item) => total + item.amount, 0)
-
-  const totalExpense = filteredTransactions
-    .filter((item) => item.type === 'Зарлага')
-    .reduce((total, item) => total + item.amount, 0)
-
-  const balance = totalIncome - totalExpense
-
-  const expenseCategories = useMemo(() => {
-    const categoryTotals = {}
-
-    filteredTransactions
-      .filter((item) => item.type === 'Зарлага')
-      .forEach((item) => {
-        categoryTotals[item.category] =
-          (categoryTotals[item.category] || 0) + item.amount
+  // Тооцооллыг сервер хийнэ
+  useEffect(() => {
+    let cancelled = false
+    getReport(period)
+      .then((data) => {
+        if (!cancelled) setReport(data)
       })
+      .catch((err) => alert(errorText(err)))
+    return () => {
+      cancelled = true
+    }
+  }, [period])
 
-    return Object.entries(categoryTotals).map(([name, value]) => ({
-      name,
-      value,
-    }))
-  }, [filteredTransactions])
+  const { totalIncome, totalExpense, balance } = report.summary
+  const monthlyData = report.monthly
+  const expenseCategories = report.expenseCategories
+  const filteredTransactions = report.transactions
 
   return (
     <div className="reports-page">
@@ -118,7 +86,11 @@ function Reports() {
             value={period}
             onChange={(e) => setPeriod(e.target.value)}
           >
-            <option value="2026-11">2026 оны 11 сар</option>
+            {periodOptions.map((item) => (
+              <option key={item} value={item}>
+                {periodLabel(item)}
+              </option>
+            ))}
             <option value="all">Бүх хугацаа</option>
           </select>
         </div>
@@ -168,7 +140,7 @@ function Reports() {
               <Receipt size={20} />
             </div>
           </div>
-          <h2>{filteredTransactions.length}</h2>
+          <h2>{report.summary.transactionCount}</h2>
           <p>Нийт бүртгэгдсэн гүйлгээ</p>
         </div>
       </div>
@@ -308,7 +280,7 @@ function Reports() {
             <p>Орлого болон зарлагын бүртгэлийн жагсаалт</p>
           </div>
           <span className="report-count">
-            {filteredTransactions.length} гүйлгээ
+            {report.summary.transactionCount} гүйлгээ
           </span>
         </div>
 

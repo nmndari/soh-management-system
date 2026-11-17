@@ -13,47 +13,69 @@ import {
   Megaphone,
   Users,
   X,
+  CalendarDays,
 } from 'lucide-react'
+import { currentAdmin, fetchMe, logout } from '../../services/auth'
+import {
+  listNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+} from '../../services/content'
 
-const initialNotifications = [
-  {
-    id: 1,
-    title: 'Шинэ санал гомдол',
-    message: 'Оршин суугчаас шинэ санал гомдол ирлээ.',
-    time: '5 минутын өмнө',
-    icon: MessageSquare,
-    read: false,
-  },
-  {
-    id: 2,
-    title: 'Шинэ оршин суугч',
-    message: 'Шинэ оршин суугч бүртгэгдлээ.',
-    time: '1 цагийн өмнө',
-    icon: Users,
-    read: false,
-  },
-  {
-    id: 3,
-    title: 'Шинэ зарлал',
-    message: 'Системд шинэ зарлал нэмэгдлээ.',
-    time: 'Өчигдөр',
-    icon: Megaphone,
-    read: true,
-  },
-]
+// Мэдэгдлийн төрлөөр дүрс сонгоно
+const iconByType = {
+  complaint_created: MessageSquare,
+  resident_created: Users,
+  announcement_published: Megaphone,
+  meeting_scheduled: CalendarDays,
+}
+
+// '2026-11-17T03:20:00Z' → '5 минутын өмнө'
+function timeAgo(iso) {
+  const minutes = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
+  if (minutes < 1) return 'Дөнгөж сая'
+  if (minutes < 60) return `${minutes} минутын өмнө`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} цагийн өмнө`
+  const days = Math.floor(hours / 24)
+  return days === 1 ? 'Өчигдөр' : `${days} өдрийн өмнө`
+}
 
 function Header() {
   const navigate = useNavigate()
 
-  const [notifications, setNotifications] = useState(initialNotifications)
+  const [notifications, setNotifications] = useState([])
   const [showNotifications, setShowNotifications] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
+  const [admin, setAdmin] = useState(currentAdmin())
 
   const headerRef = useRef(null)
 
   const unreadCount = notifications.filter(
     (notification) => !notification.read
   ).length
+
+  // Админы мэдээлэл, мэдэгдлийг серверээс ачаална
+  useEffect(() => {
+    fetchMe().then(setAdmin).catch(() => {})
+
+    const loadNotifications = () =>
+      listNotifications()
+        .then(({ items }) =>
+          setNotifications(
+            items.map((item) => ({
+              ...item,
+              time: timeAgo(item.createdAt),
+              icon: iconByType[item.type] || Bell,
+            }))
+          )
+        )
+        .catch(() => {})
+
+    loadNotifications()
+    const timer = setInterval(loadNotifications, 60000)
+    return () => clearInterval(timer)
+  }, [])
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -90,17 +112,20 @@ function Header() {
         item.id === id ? { ...item, read: true } : item
       )
     )
+    markNotificationRead(id).catch(() => {})
   }
 
   const markAllAsRead = () => {
     setNotifications((prev) =>
       prev.map((item) => ({ ...item, read: true }))
     )
+    markAllNotificationsRead().catch(() => {})
   }
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     setShowProfile(false)
-    navigate('/')
+    await logout()
+    navigate('/', { replace: true })
   }
 
   const goToSettings = () => {
@@ -212,10 +237,10 @@ function Header() {
             onClick={toggleProfile}
             aria-expanded={showProfile}
           >
-            <div className="admin-avatar">А</div>
+            <div className="admin-avatar">{admin?.fullName?.charAt(0) || 'А'}</div>
 
             <div className="header-profile-info">
-              <strong>Администратор</strong>
+              <strong>{admin?.fullName || 'Администратор'}</strong>
               <span>СӨХ менежер</span>
             </div>
 
@@ -228,9 +253,9 @@ function Header() {
           {showProfile && (
             <div className="header-dropdown profile-dropdown">
               <div className="profile-dropdown-info">
-                <div className="admin-avatar">А</div>
+                <div className="admin-avatar">{admin?.fullName?.charAt(0) || 'А'}</div>
                 <div>
-                  <strong>Администратор</strong>
+                  <strong>{admin?.fullName || 'Администратор'}</strong>
                   <span>СӨХ менежер</span>
                 </div>
               </div>

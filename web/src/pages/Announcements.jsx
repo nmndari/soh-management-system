@@ -1,5 +1,5 @@
 
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Plus,
   Search,
@@ -15,68 +15,24 @@ import {
   Users,
 } from 'lucide-react'
 import './Announcements.css'
-
-const initialAnnouncements = [
-  {
-    id: 1,
-    title: 'Лифтний засвар үйлчилгээ хийгдэнэ',
-    category: 'Засвар үйлчилгээ',
-    content:
-      '11-р сарын 20-ны өдөр 10:00-16:00 цагийн хооронд лифтний төлөвлөгөөт засвар үйлчилгээ хийгдэнэ. Иймд оршин суугчид та бүхэн урьдчилан төлөвлөнө үү.',
-    date: '2026-11-17',
-    status: 'Нийтэлсэн',
-    notify: true,
-    audience: 'Бүх оршин суугч',
-  },
-  {
-    id: 2,
-    title: 'Орцны цэвэрлэгээний хуваарь',
-    category: 'Үйлчилгээ',
-    content:
-      'Орцны их цэвэрлэгээ энэ долоо хоногийн Бямба гарагт явагдана.',
-    date: '2026-11-15',
-    status: 'Нийтэлсэн',
-    notify: false,
-    audience: 'Бүх оршин суугч',
-  },
-  {
-    id: 3,
-    title: 'Оршин суугчдын хурлын тухай',
-    category: 'Хурал',
-    content:
-      'Оршин суугчдын ээлжит хурал 11-р сарын 25-ны өдөр зохион байгуулагдана.',
-    date: '2026-11-14',
-    status: 'Ноорог',
-    notify: false,
-    audience: 'Бүх оршин суугч',
-  },
-  {
-    id: 4,
-    title: 'Усны шугамын засвар',
-    category: 'Засвар үйлчилгээ',
-    content:
-      'Усны шугамын засвар үйлчилгээтэй холбоотой мэдээлэл.',
-    date: '2026-11-12',
-    status: 'Нийтэлсэн',
-    notify: true,
-    audience: '1-р орц',
-  },
-]
-
-const categories = [
-  'Ерөнхий мэдээлэл',
-  'Засвар үйлчилгээ',
-  'Үйлчилгээ',
-  'Хурал',
-  'Анхааруулга',
-  'Бусад',
-]
+import { errorText } from '../services/api'
+import { getCategories } from '../services/categories'
+import {
+  createAnnouncement,
+  deleteAnnouncement,
+  getAnnouncementStats,
+  listAnnouncements,
+  publishAnnouncement,
+  unpublishAnnouncement,
+  updateAnnouncement,
+} from '../services/content'
+import { todayString, useDebounced } from '../utils/date'
 
 const emptyForm = {
   title: '',
   category: 'Ерөнхий мэдээлэл',
   content: '',
-  date: new Date().toISOString().slice(0, 10),
+  date: todayString(),
   audience: 'Бүх оршин суугч',
   notify: false,
 }
@@ -89,14 +45,16 @@ const formatDate = (date) => {
 }
 
 function Announcements() {
-  const [announcements, setAnnouncements] = useState(
-    initialAnnouncements
-  )
+  const [announcements, setAnnouncements] = useState([])
+  const [stats, setStats] = useState({ total: 0, published: 0, draft: 0, notified: 0 })
+  const [categories, setCategories] = useState([])
+  const [loading, setLoading] = useState(true)
 
   // Search and filters
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('Бүх ангилал')
   const [statusFilter, setStatusFilter] = useState('Бүх төлөв')
+  const debouncedSearch = useDebounced(search)
 
   // Modal states
   const [showModal, setShowModal] = useState(false)
@@ -106,42 +64,64 @@ function Announcements() {
   // Form state
   const [form, setForm] = useState(emptyForm)
 
+  // Ангиллыг серверээс авна
+  useEffect(() => {
+    getCategories('announcement')
+      .then((list) => setCategories(list.map((c) => c.name)))
+      .catch((err) => alert(errorText(err)))
+  }, [])
+
+  // Жагсаалт ба статистикийг серверээс авна (шүүлтүүрийг сервер хийнэ)
+  const loadAnnouncements = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [list, summary] = await Promise.all([
+        listAnnouncements({
+          search: debouncedSearch,
+          category: categoryFilter,
+          status: statusFilter,
+        }),
+        getAnnouncementStats(),
+      ])
+      setAnnouncements(list.items)
+      setStats(summary)
+    } catch (err) {
+      alert(errorText(err))
+    } finally {
+      setLoading(false)
+    }
+  }, [debouncedSearch, categoryFilter, statusFilter])
+
+  useEffect(() => {
+    loadAnnouncements()
+  }, [loadAnnouncements])
+
+  // Үйлдэл хийгээд жагсаалтыг дахин ачаална
+  const run = async (action) => {
+    try {
+      await action()
+      await loadAnnouncements()
+      return true
+    } catch (err) {
+      alert(errorText(err))
+      return false
+    }
+  }
+
   // Statistics
-  const publishedCount = announcements.filter(
-    (item) => item.status === 'Нийтэлсэн'
-  ).length
+  const publishedCount = stats.published
+  const draftCount = stats.draft
+  const notifiedCount = stats.notified
 
-  const draftCount = announcements.filter(
-    (item) => item.status === 'Ноорог'
-  ).length
-
-  const notifiedCount = announcements.filter(
-    (item) => item.notify && item.status === 'Нийтэлсэн'
-  ).length
-
-  // Filter announcements
-  const filteredAnnouncements = announcements.filter((item) => {
-    const matchesSearch =
-      item.title.toLowerCase().includes(search.toLowerCase()) ||
-      item.content.toLowerCase().includes(search.toLowerCase())
-
-    const matchesCategory =
-      categoryFilter === 'Бүх ангилал' ||
-      item.category === categoryFilter
-
-    const matchesStatus =
-      statusFilter === 'Бүх төлөв' ||
-      item.status === statusFilter
-
-    return matchesSearch && matchesCategory && matchesStatus
-  })
+  const filteredAnnouncements = announcements
 
   // Open create modal
   const openCreateModal = () => {
     setSelectedAnnouncement(null)
     setForm({
       ...emptyForm,
-      date: new Date().toISOString().slice(0, 10),
+      category: categories[0] || emptyForm.category,
+      date: todayString(),
     })
     setShowModal(true)
   }
@@ -161,79 +141,42 @@ function Announcements() {
   }
 
   // Create or update announcement
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
 
-    const action = e.nativeEvent.submitter?.value
-    const shouldPublish = action === 'publish'
+    const action = e.nativeEvent.submitter?.value === 'publish' ? 'publish' : 'draft'
 
     if (!form.title.trim() || !form.content.trim()) {
       return
     }
 
-    const newItem = {
-      ...form,
-      title: form.title.trim(),
-      content: form.content.trim(),
-      status: shouldPublish ? 'Нийтэлсэн' : 'Ноорог',
-      id: selectedAnnouncement
-        ? selectedAnnouncement.id
-        : Date.now(),
-    }
+    const saved = await run(() =>
+      selectedAnnouncement
+        ? updateAnnouncement(selectedAnnouncement.id, form, action)
+        : createAnnouncement(form, action)
+    )
 
-    if (selectedAnnouncement) {
-      setAnnouncements((prev) =>
-        prev.map((item) =>
-          item.id === selectedAnnouncement.id
-            ? newItem
-            : item
-        )
-      )
-    } else {
-      setAnnouncements((prev) => [newItem, ...prev])
-    }
-
-    closeModal()
+    if (saved) closeModal()
   }
 
   // Delete announcement
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     const confirmed = window.confirm(
       'Энэ зарлалыг устгахдаа итгэлтэй байна уу?'
     )
 
     if (!confirmed) return
 
-    setAnnouncements((prev) =>
-      prev.filter((item) => item.id !== id)
-    )
-
-    if (viewAnnouncement?.id === id) {
+    if (await run(() => deleteAnnouncement(id)) && viewAnnouncement?.id === id) {
       setViewAnnouncement(null)
     }
   }
 
   // Publish draft
-  const handlePublish = (id) => {
-    setAnnouncements((prev) =>
-      prev.map((item) =>
-        item.id === id
-          ? { ...item, status: 'Нийтэлсэн' }
-          : item
-      )
-    )
-  }
+  const handlePublish = (id) => run(() => publishAnnouncement(id))
 
   // Move published announcement to draft
-  const handleUnpublish = (id) => {
-    setAnnouncements((prev) =>
-      prev.map((item) =>
-        item.id === id
-          ? { ...item, status: 'Ноорог', notify: false }
-          : item
-      )
-    )
-  }
+  const handleUnpublish = (id) => run(() => unpublishAnnouncement(id))
 
   return (
     <div className="announcements-page">
@@ -271,7 +214,7 @@ function Announcements() {
 
           <div>
             <p>Нийт зарлал</p>
-            <h2>{announcements.length}</h2>
+            <h2>{stats.total}</h2>
           </div>
         </div>
 
@@ -320,7 +263,7 @@ function Announcements() {
           </div>
 
           <span className="announcement-count">
-            {filteredAnnouncements.length} зарлал
+            {loading ? 'Ачаалж байна...' : `${filteredAnnouncements.length} зарлал`}
           </span>
         </div>
 

@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   LogOut,
 } from 'lucide-react'
+import { currentAdmin, logout } from '../../services/auth'
 
 const navigation = [
   {
@@ -44,8 +45,11 @@ const navigation = [
 function Sidebar() {
   const navigate = useNavigate()
 
-  const handleLogout = () => {
-    navigate('/')
+  const admin = currentAdmin()
+
+  const handleLogout = async () => {
+    await logout()
+    navigate('/', { replace: true })
   }
 
   return (
@@ -100,9 +104,9 @@ function Sidebar() {
         </button>
 
         <div className="sidebar-admin">
-          <div className="admin-avatar">А</div>
+          <div className="admin-avatar">{admin?.fullName?.charAt(0) || 'А'}</div>
           <div className="admin-details">
-            <strong>Администратор</strong>
+            <strong>{admin?.fullName || 'Администратор'}</strong>
             <span>СӨХ менежер</span>
           </div>
           <ChevronLeft size={16} />

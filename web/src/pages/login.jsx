@@ -1,6 +1,6 @@
 
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Navigate, useNavigate } from 'react-router-dom'
 import {
   Building2,
   Eye,
@@ -10,6 +10,8 @@ import {
   ArrowRight,
 } from 'lucide-react'
 import './Login.css'
+import { login } from '../services/auth'
+import { isLoggedIn } from '../services/api'
 
 function Login() {
   const navigate = useNavigate()
@@ -18,20 +20,28 @@ function Login() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
 
-  
-    const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
+    setError('')
+    setSubmitting(true)
 
-    const demoEmail = 'admin@soh.mn'
-    const demoPassword = 'Admin123!'
+    try {
+      await login(email, password, rememberMe)
+      navigate('/dashboard')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
-    if (email === demoEmail && password === demoPassword) {
-        navigate('/dashboard')
-    } else {
-        alert('И-мэйл эсвэл нууц үг буруу байна.')
-    }
-    }
+  // Аль хэдийн нэвтэрсэн бол шууд самбар руу
+  if (isLoggedIn()) {
+    return <Navigate to="/dashboard" replace />
+  }
 
 
   return (
@@ -141,8 +151,14 @@ function Login() {
               </button>
             </div>
 
-            <button type="submit" className="login-button">
-              Нэвтрэх
+            {error && (
+              <p className="login-error" role="alert">
+                {error}
+              </p>
+            )}
+
+            <button type="submit" className="login-button" disabled={submitting}>
+              {submitting ? 'Нэвтэрч байна...' : 'Нэвтрэх'}
               <ArrowRight size={18} />
             </button>
           </form>

@@ -1,6 +1,7 @@
 
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
+  Pencil,
   Plus,
   Search,
   Receipt,
@@ -12,58 +13,24 @@ import {
   ArrowDownRight,
 } from 'lucide-react'
 import './Expenses.css'
+import { errorText } from '../services/api'
+import { getCategories } from '../services/categories'
+import {
+  createExpense,
+  deleteExpense,
+  getExpenseStats,
+  listExpenses,
+  updateExpense,
+} from '../services/finance'
+import { todayString, useDebounced } from '../utils/date'
 
-const initialExpenses = [
-  {
-    id: 1,
-    title: 'Лифтний засвар үйлчилгээ',
-    category: 'Засвар үйлчилгээ',
-    description: 'Лифтний техникийн үзлэг, засвар',
-    amount: 850000,
-    date: '2026-11-15',
-  },
-  {
-    id: 2,
-    title: 'Орцны цэвэрлэгээ',
-    category: 'Цэвэрлэгээ',
-    description: '11-р сарын цэвэрлэгээний үйлчилгээ',
-    amount: 450000,
-    date: '2026-11-12',
-  },
-  {
-    id: 3,
-    title: 'Нийтийн эзэмшлийн цахилгаан',
-    category: 'Ашиглалтын зардал',
-    description: 'Орц болон гадна талбайн цахилгаан',
-    amount: 320000,
-    date: '2026-11-10',
-  },
-  {
-    id: 4,
-    title: 'Харуул хамгаалалтын үйлчилгээ',
-    category: 'Үйлчилгээ',
-    description: 'Харуул хамгаалалтын үйлчилгээний зардал',
-    amount: 1200000,
-    date: '2026-11-08',
-  },
-  {
-    id: 5,
-    title: 'Гэрэлтүүлгийн чийдэн солих',
-    category: 'Засвар үйлчилгээ',
-    description: 'Орцны гэрэлтүүлэг шинэчилсэн',
-    amount: 180000,
-    date: '2026-11-05',
-  },
-]
-
-const categories = [
-  'Бүх ангилал',
-  'Засвар үйлчилгээ',
-  'Цэвэрлэгээ',
-  'Ашиглалтын зардал',
-  'Үйлчилгээ',
-  'Бусад',
-]
+const emptyForm = () => ({
+  title: '',
+  category: 'Засвар үйлчилгээ',
+  description: '',
+  amount: '',
+  date: todayString(),
+})
 
 const formatMoney = (amount) =>
   new Intl.NumberFormat('mn-MN').format(amount) + ' ₮'
@@ -74,70 +41,102 @@ const formatDate = (date) => {
 }
 
 function Expenses() {
-  const [expenses, setExpenses] = useState(initialExpenses)
+  const [expenses, setExpenses] = useState([])
+  const [stats, setStats] = useState({ total: 0, thisMonth: 0, count: 0 })
+  const [categories, setCategories] = useState(['Бүх ангилал'])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('Бүх ангилал')
   const [showModal, setShowModal] = useState(false)
+  const [editingExpense, setEditingExpense] = useState(null)
 
-  const [form, setForm] = useState({
-    title: '',
-    category: 'Засвар үйлчилгээ',
-    description: '',
-    amount: '',
-    date: new Date().toISOString().slice(0, 10),
-  })
+  const [form, setForm] = useState(emptyForm)
 
-  const totalExpenses = expenses.reduce(
-    (total, item) => total + item.amount,
-    0
-  )
+  const debouncedSearch = useDebounced(search)
 
-  const currentMonth = new Date().toISOString().slice(0, 7)
+  // Ангиллыг серверээс авна
+  useEffect(() => {
+    getCategories('expense')
+      .then((list) => setCategories(['Бүх ангилал', ...list.map((c) => c.name)]))
+      .catch((err) => alert(errorText(err)))
+  }, [])
 
-  const monthlyExpenses = expenses
-    .filter((item) => item.date.startsWith(currentMonth))
-    .reduce((total, item) => total + item.amount, 0)
+  const loadExpenses = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [list, summary] = await Promise.all([
+        listExpenses({ search: debouncedSearch, category: selectedCategory }),
+        getExpenseStats(),
+      ])
+      setExpenses(list.items)
+      setStats(summary)
+    } catch (err) {
+      alert(errorText(err))
+    } finally {
+      setLoading(false)
+    }
+  }, [debouncedSearch, selectedCategory])
 
-  const filteredExpenses = expenses.filter((item) => {
-    const matchesSearch =
-      item.title.toLowerCase().includes(search.toLowerCase()) ||
-      item.description.toLowerCase().includes(search.toLowerCase())
+  useEffect(() => {
+    loadExpenses()
+  }, [loadExpenses])
 
-    const matchesCategory =
-      selectedCategory === 'Бүх ангилал' ||
-      item.category === selectedCategory
+  const totalExpenses = stats.total
+  const monthlyExpenses = stats.thisMonth
+  const filteredExpenses = expenses
 
-    return matchesSearch && matchesCategory
-  })
+  const openCreateModal = () => {
+    setEditingExpense(null)
+    setForm({ ...emptyForm(), category: categories[1] || '' })
+    setShowModal(true)
+  }
 
-  const handleAddExpense = (e) => {
+  const openEditModal = (expense) => {
+    setEditingExpense(expense)
+    setForm({
+      title: expense.title,
+      category: expense.category,
+      description: expense.description || '',
+      amount: String(expense.amount),
+      date: expense.date,
+    })
+    setShowModal(true)
+  }
+
+  const handleAddExpense = async (e) => {
     e.preventDefault()
 
     if (!form.title.trim() || !form.amount || Number(form.amount) <= 0) {
       return
     }
 
-    const newExpense = {
-      ...form,
-      id: Date.now(),
-      amount: Number(form.amount),
+    setSaving(true)
+    try {
+      if (editingExpense) {
+        await updateExpense(editingExpense.id, form)
+      } else {
+        await createExpense(form)
+      }
+      setShowModal(false)
+      setEditingExpense(null)
+      setForm(emptyForm())
+      await loadExpenses()
+    } catch (err) {
+      alert(errorText(err))
+    } finally {
+      setSaving(false)
     }
-
-    setExpenses((prev) => [newExpense, ...prev])
-    setShowModal(false)
-
-    setForm({
-      title: '',
-      category: 'Засвар үйлчилгээ',
-      description: '',
-      amount: '',
-      date: new Date().toISOString().slice(0, 10),
-    })
   }
 
-  const handleDelete = (id) => {
-    if (window.confirm('Энэ зардлын бүртгэлийг устгах уу?')) {
-      setExpenses((prev) => prev.filter((item) => item.id !== id))
+  const handleDelete = async (id) => {
+    if (!window.confirm('Энэ зардлын бүртгэлийг устгах уу?')) return
+
+    try {
+      await deleteExpense(id)
+      await loadExpenses()
+    } catch (err) {
+      alert(errorText(err))
     }
   }
 
@@ -153,7 +152,7 @@ function Expenses() {
 
         <button
           className="add-expense-btn"
-          onClick={() => setShowModal(true)}
+          onClick={openCreateModal}
         >
           <Plus size={18} />
           Зардал бүртгэх
@@ -191,7 +190,7 @@ function Expenses() {
               <Receipt size={20} />
             </div>
           </div>
-          <h2>{expenses.length}</h2>
+          <h2>{stats.count}</h2>
           <p>Бүртгэгдсэн зардлын тоо</p>
         </div>
       </div>
@@ -204,7 +203,7 @@ function Expenses() {
             <p>Бүртгэгдсэн зардлуудын дэлгэрэнгүй мэдээлэл</p>
           </div>
           <span className="expense-count">
-            {filteredExpenses.length} бүртгэл
+            {loading ? 'Ачаалж байна...' : `${filteredExpenses.length} бүртгэл`}
           </span>
         </div>
 
@@ -280,7 +279,15 @@ function Expenses() {
                       {formatMoney(item.amount)}
                     </td>
 
-                    <td>
+                    <td className="expense-row-actions">
+                      <button
+                        className="delete-expense-btn edit-expense-btn"
+                        onClick={() => openEditModal(item)}
+                        title="Засах"
+                        aria-label="Зардал засах"
+                      >
+                        <Pencil size={16} />
+                      </button>
                       <button
                         className="delete-expense-btn"
                         onClick={() => handleDelete(item.id)}
@@ -318,8 +325,8 @@ function Expenses() {
           >
             <div className="expense-modal-heading">
               <div>
-                <span>ШИНЭ БҮРТГЭЛ</span>
-                <h2>Зардал бүртгэх</h2>
+                <span>{editingExpense ? 'ЗАСВАР' : 'ШИНЭ БҮРТГЭЛ'}</span>
+                <h2>{editingExpense ? 'Зардал засах' : 'Зардал бүртгэх'}</h2>
                 <p>Зардлын мэдээллийг бүрэн оруулна уу.</p>
               </div>
 
@@ -411,9 +418,9 @@ function Expenses() {
                   Болих
                 </button>
 
-                <button type="submit" className="save-expense-btn">
+                <button type="submit" className="save-expense-btn" disabled={saving}>
                   <Plus size={17} />
-                  Бүртгэх
+                  {saving ? 'Хадгалж байна...' : editingExpense ? 'Хадгалах' : 'Бүртгэх'}
                 </button>
               </div>
             </form>

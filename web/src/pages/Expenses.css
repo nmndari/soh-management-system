@@ -306,6 +306,22 @@
   color: #d35e65;
 }
 
+.expense-row-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.edit-expense-btn:hover {
+  background: #eef3fa;
+  color: #6386b5;
+}
+
+.save-expense-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
 .expense-empty {
   text-align: center;
   padding: 50px 15px !important;
