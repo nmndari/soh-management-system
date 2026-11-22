@@ -150,7 +150,7 @@ GitHub Actions ашиглан CI pipeline-ийн ажиллагааг туршс
 
 #### Локал тест унасан үе
 
-![Локал Jest тестийн failure](lab11_screenshots/fail_test.png)
+Локал Jest тестийн failure screenshot нь `lab11_screenshots/fail_test.png` файлд байрлана.
 
 #### Pull Request дээр CI унасан үе
 
